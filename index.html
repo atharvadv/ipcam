@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Zoom Motion Detection View</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background-color: #111;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      overflow-x: hidden;
+    }
+
+    /* Motion Detection Area */
+    #motion-area {
+      background: #000;
+      padding: 20px;
+      border-bottom: 2px solid #333;
+      min-height: 40vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #motion-area h2 {
+      margin: 0 0 15px 0;
+      color: #fff;
+      font-size: 18px;
+      text-align: center;
+    }
+
+    #motion-cameras {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 15px;
+      flex-grow: 1;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .motion-cam {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      border: 3px solid #ff4444;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { border-color: #ff4444; }
+      50% { border-color: #ff8888; }
+      100% { border-color: #ff4444; }
+    }
+
+    .motion-cam-container {
+      position: relative;
+    }
+
+    .motion-cam-label {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255, 68, 68, 0.9);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .motion-cam-timer {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    #no-motion-message {
+      text-align: center;
+      color: #666;
+      font-style: italic;
+      margin: 50px 0;
+    }
+
+    /* All Cameras Grid */
+    #all-cameras-section {
+      padding: 20px;
+    }
+
+    #all-cameras-section h2 {
+      margin: 0 0 15px 0;
+      color: #ccc;
+      font-size: 16px;
+      text-align: center;
+    }
+
+    #grid-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+    }
+
+    .cam {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      border: 2px solid #444;
+      border-radius: 4px;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .cam:hover {
+      border-color: #666;
+      transform: scale(1.05);
+    }
+
+    .cam-label {
+      position: absolute;
+      bottom: 5px;
+      left: 5px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+    }
+
+    .cam.has-motion {
+      border-color: #ff4444;
+      box-shadow: 0 0 10px rgba(255, 68, 68, 0.3);
+    }
+
+    /* Status indicator */
+    #status {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 1000;
+    }
+
+    .status-connected {
+      color: #4CAF50;
+    }
+
+    .status-disconnected {
+      color: #f44336;
+    }
+  </style>
+</head>
+<body>
+  <!-- Status Indicator -->
+  <div id="status" class="status-disconnected">⚫ Disconnected</div>
+
+  <!-- Motion Detection Area -->
+  <div id="motion-area">
+    <h2>Pratik Halkunde's Motion Detected IP Cameras</h2>
+    <div id="motion-cameras">
+      <div id="no-motion-message">No motion detected - All cameras monitoring...</div>
+    </div>
+  </div>
+
+  <!-- All Cameras Grid -->
+  <div id="all-cameras-section">
+    <h2> All Cameras</h2>
+    <div id="grid-container"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+  <script>
+    const NUM_CAMS = 16;
+    const MOTION_DURATION = 10000; // 10 seconds
+    
+    const gridContainer = document.getElementById('grid-container');
+    const motionCameras = document.getElementById('motion-cameras');
+    const noMotionMessage = document.getElementById('no-motion-message');
+    const status = document.getElementById('status');
+    
+    const camMap = new Map();
+    const motionCamMap = new Map();
+    const motionTimers = new Map();
+    const motionCountdowns = new Map();
+
+    // Create all cameras in the grid
+    for (let i = 0; i < NUM_CAMS; i++) {
+      const camContainer = document.createElement('div');
+      camContainer.style.position = 'relative';
+      
+      const cam = document.createElement('img');
+      cam.src = "/stream/" + i;
+      cam.className = "cam";
+      cam.id = "cam" + i;
+      cam.alt = "Camera " + i;
+      
+      const label = document.createElement('div');
+      label.className = 'cam-label';
+      label.textContent = `Cam ${i + 1}`;
+      
+      camContainer.appendChild(cam);
+      camContainer.appendChild(label);
+      
+      camMap.set(i, cam);
+      gridContainer.appendChild(camContainer);
+    }
+
+    // Socket.IO connection with optimized settings
+    let socket;
+    let reconnectInterval;
+
+    function connectWebSocket() {
+      // Use Socket.IO with optimized settings for real-time performance
+      socket = io({
+        transports: ['websocket'],  // Use WebSocket only, faster than polling
+        upgrade: false,
+        rememberUpgrade: false,
+        timeout: 5000,
+        forceNew: true
+      });
+      
+      socket.on('connect', () => {
+        status.textContent = "🟢 Connected";
+        status.className = "status-connected";
+        console.log('Connected to server');
+        if (reconnectInterval) {
+          clearInterval(reconnectInterval);
+          reconnectInterval = null;
+        }
+      });
+
+      socket.on('motion_detected', (camId) => {
+        console.log('Motion detected on camera:', camId);
+        const camIdNum = parseInt(camId);
+        if (!isNaN(camIdNum) && camIdNum >= 0 && camIdNum < NUM_CAMS) {
+          // Handle motion detection immediately
+          handleMotionDetection(camIdNum);
+        }
+      });
+
+      socket.on('disconnect', () => {
+        status.textContent = "🔴 Disconnected";
+        status.className = "status-disconnected";
+        console.log('Disconnected from server');
+        
+        // Try to reconnect every 2 seconds (faster reconnection)
+        if (!reconnectInterval) {
+          reconnectInterval = setInterval(() => {
+            connectWebSocket();
+          }, 2000);
+        }
+      });
+
+      socket.on('connect_error', (error) => {
+        console.error('Socket.IO connection error:', error);
+        status.textContent = "🔴 Connection Error";
+        status.className = "status-disconnected";
+      });
+    }
+
+    function handleMotionDetection(camId) {
+      console.log(`[FRONTEND] Processing motion for camera ${camId}`);
+      
+      // Clear existing timer for this camera
+      if (motionTimers.has(camId)) {
+        clearTimeout(motionTimers.get(camId));
+        clearInterval(motionCountdowns.get(camId));
+      }
+
+      // Add camera to motion area if not already there
+      if (!motionCamMap.has(camId)) {
+        addMotionCamera(camId);
+      } else {
+        // Reset timer display if already exists
+        const timerElement = document.querySelector(`#motion-cam-${camId} .motion-cam-timer`);
+        if (timerElement) {
+          timerElement.textContent = `${MOTION_DURATION / 1000}s`;
+        }
+      }
+
+      // Highlight the camera in the grid immediately
+      const gridCam = camMap.get(camId);
+      if (gridCam) {
+        gridCam.classList.add('has-motion');
+      }
+
+      // Update motion area visibility
+      updateMotionAreaVisibility();
+
+      // Start countdown timer
+      let timeLeft = MOTION_DURATION / 1000;
+      const timerElement = document.querySelector(`#motion-cam-${camId} .motion-cam-timer`);
+      
+      const countdown = setInterval(() => {
+        timeLeft--;
+        if (timerElement) {
+          timerElement.textContent = `${timeLeft}s`;
+        }
+        if (timeLeft <= 0) {
+          clearInterval(countdown);
+        }
+      }, 1000);
+      
+      motionCountdowns.set(camId, countdown);
+
+      // Set removal timer
+      const timer = setTimeout(() => {
+        removeMotionCamera(camId);
+        
+        // Remove highlight from grid camera
+        if (gridCam) {
+          gridCam.classList.remove('has-motion');
+        }
+        
+        motionTimers.delete(camId);
+        motionCountdowns.delete(camId);
+        updateMotionAreaVisibility();
+      }, MOTION_DURATION);
+
+      motionTimers.set(camId, timer);
+    }
+
+    function addMotionCamera(camId) {
+      console.log(`[FRONTEND] Adding motion camera ${camId}`);
+      
+      const container = document.createElement('div');
+      container.className = 'motion-cam-container';
+      container.id = `motion-cam-${camId}`;
+      
+      const cam = document.createElement('img');
+      cam.src = "/stream/" + camId;
+      cam.className = "motion-cam";
+      cam.alt = "Motion Camera " + camId;
+      // Preload the image for faster display
+      cam.loading = "eager";
+      
+      const label = document.createElement('div');
+      label.className = 'motion-cam-label';
+      label.textContent = `MOTION Detected - Cam ${camId + 1}`;
+      
+      const timer = document.createElement('div');
+      timer.className = 'motion-cam-timer';
+      timer.textContent = `${MOTION_DURATION / 1000}s`;
+      
+      container.appendChild(cam);
+      container.appendChild(label);
+      container.appendChild(timer);
+      
+      // Add with animation
+      container.style.opacity = '0';
+      container.style.transform = 'scale(0.8)';
+      
+      motionCameras.appendChild(container);
+      motionCamMap.set(camId, container);
+      
+      // Animate in
+      requestAnimationFrame(() => {
+        container.style.transition = 'all 0.3s ease';
+        container.style.opacity = '1';
+        container.style.transform = 'scale(1)';
+      });
+    }
+
+    function removeMotionCamera(camId) {
+      const container = motionCamMap.get(camId);
+      if (container) {
+        container.remove();
+        motionCamMap.delete(camId);
+      }
+    }
+
+    function updateMotionAreaVisibility() {
+      if (motionCamMap.size === 0) {
+        noMotionMessage.style.display = 'block';
+      } else {
+        noMotionMessage.style.display = 'none';
+      }
+    }
+
+    // Initialize WebSocket connection
+    connectWebSocket();
+
+    // Test function - remove in production
+    function simulateMotion() {
+      const randomCam = Math.floor(Math.random() * NUM_CAMS);
+      console.log('Simulating motion on camera:', randomCam);
+      if (socket && socket.connected) {
+        socket.emit('test_motion', { cam_id: randomCam });
+      } else {
+        handleMotionDetection(randomCam);
+      }
+    }
+
+    // Add test button for development
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 't' || e.key === 'T') {
+        simulateMotion();
+      }
+    });
+
+    // Uncomment to test with random motion every 10 seconds
+    // setInterval(simulateMotion, 10000);
+  </script>
+</body>
+</html>
