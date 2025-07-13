@@ -1,5 +1,4 @@
 # ipcam
-# ipcam
 
 A lightweight, real-time multi-IP camera monitoring and motion detection dashboard.
 
