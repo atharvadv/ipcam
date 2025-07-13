@@ -25,6 +25,17 @@ Backend is a Python Flask server with Flask-SocketIO for real-time events, OpenC
 
 ## Quick Start
 
+## Architecture Overview
+
+```
++-----------+        +---------------------------+         +------------------+
+|  IP Cams  |<-----> | Python Backend (Flask,    | <-----> | Frontend (JS/HTML|
+|           |        | OpenCV, MJPEG/WebSocket)  |         |   CSS, MJPEG/WS) |
++-----------+        +---------------------------+         +------------------+
+```
+
+---
+
 ### Requirements
 
 - Python 3.8+
