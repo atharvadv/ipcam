@@ -54,6 +54,7 @@ Paste the credentials at line no
 ```sh
 pip install flask flask-socketio opencv-python numpy
 ```
+-You Can Add Firebase Credentials from line 555 in login.html
 
 ### Configure camera sources
 
