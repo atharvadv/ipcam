@@ -40,6 +40,14 @@ Backend is a Python Flask server with Flask-SocketIO for real-time events, OpenC
 - Python 3.8+
 - pip (for dependencies)
 - Node.js (optional, only if running custom frontend build)
+- Firebase Credentials
+
+### Create Firebase Account 
+Create Web app 
+Copy credentials of Firebase 
+Go to web_client (your app), Left side In authentication enable Google and Email/Password
+Paste the credentials at line no 
+
 
 ### Install dependencies
 
